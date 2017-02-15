@@ -24,6 +24,10 @@
 
 #include "mdss_dsi.h"
 
+#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+#include <linux/input/doubletap2wake.h>
+#endif
+
 #if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
 #include "mdss_debug.h"
 #include "samsung/ss_dsi_panel_common.h"
@@ -712,6 +716,17 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 {
 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
 	struct mdss_panel_info *pinfo;
+	u8 pwr_mode = 0;
+ 	char *dropbox_issue = NULL;
+ 	static int dropbox_count;
+ 	static int panel_recovery_retry;
+ 
+#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+	bool prevent_sleep = (dt2w_switch > 0);
+	if (prevent_sleep && in_phone_call)
+		prevent_sleep = false;
+#endif
+
 #if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
 	struct samsung_display_driver_data *vdd = NULL;
 #endif
@@ -732,6 +747,108 @@ static int mdss_dsi_panel_on(struct mdss_panel_data *pdata)
 			goto end;
 	}
 
+if (ctrl->panel_config.bare_board == true) {
+ 		pr_warn("%s: This is bare_board configuration\n", __func__);
+ 		goto end;
+ 	}
+ 
+ 	if (ctrl->on_cmds.cmd_cnt)
+ 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->on_cmds);
+ 
+ 	mdss_dsi_panel_cmd_read(ctrl, DCS_CMD_GET_POWER_MODE, 0x00, NULL,
+ 			&pwr_mode, 1,
+ 			ctrl->on_cmds.link_state == DSI_HS_MODE ? true : false);
+ 	if ((pwr_mode & 0x04) != 0x04) {
+ 		pr_err("%s: Display failure: DISON (0x04) bit not set\n",
+ 								__func__);
+ 		dropbox_issue = MDSS_DROPBOX_MSG_PWR_MODE_BLACK;
+ 
+ 		if (panel_recovery_retry++ > MDSS_PWR_ON_RETRIES) {
+ 			pr_err("%s: panel recovery failed for all retries",
+ 				__func__);
+ 			BUG();
+ 		}
+ 	} else
+ 		panel_recovery_retry = 0;
+ 
+ end:
+ 	pinfo->blank_state = MDSS_PANEL_BLANK_UNBLANK;
+ 	if (dropbox_issue != NULL) {
+ 		dropbox_count++;
+ 		mdss_dropbox_report_event(dropbox_issue, dropbox_count);
+ 	} else
+ 		dropbox_count = 0;
+ 
+ 	pr_info("%s-. Pwr_mode(0x0A) = 0x%x\n", __func__, pwr_mode);
+
+#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+	dt2w_scr_suspended = false;
+#endif
+
+ 	return 0;
+ }
+static void mdss_dsi_panel_off_in_prog_notify(struct mdss_panel_data *pdata,
+ 					struct mdss_panel_info *pinfo)
+ {
+ 	struct fb_event event;
+ 	int blank;
+ 	struct fb_info *fbi;
+ 
+ 	if (!pinfo->blank_progress_notify_enabled)
+ 		return;
+ 
+ 	fbi = pdata->mfd->fbi;
+ 	blank = FB_BLANK_POWERDOWN;
+ 	event.info = fbi;
+ 	event.data = &blank;
+ 	fb_notifier_call_chain(FB_IN_PROGRESS_EVENT_BLANK, &event);
+ }
+ 
+ static int mdss_dsi_panel_off(struct mdss_panel_data *pdata)
+ {
+ 	struct mdss_dsi_ctrl_pdata *ctrl = NULL;
+ 	struct mdss_panel_info *pinfo;
+ 
+#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
+	bool prevent_sleep = (dt2w_switch > 0);
+	if (prevent_sleep && in_phone_call)
+		prevent_sleep = false;
+#endif
+
+ 	if (pdata == NULL) {
+ 		pr_err("%s: Invalid input data\n", __func__);
+ 		return -EINVAL;
+ 	}
+ 
+ 	pinfo = &pdata->panel_info;
+ 	ctrl = container_of(pdata, struct mdss_dsi_ctrl_pdata,
+ 				panel_data);
+ 
+ 	pr_info("%s+: ctrl=%p ndx=%d\n", __func__, ctrl, ctrl->ndx);
+ 
+ 	if (pinfo->dcs_cmd_by_left) {
+ 		if (ctrl->ndx != DSI_CTRL_LEFT)
+ 			goto end;
+ 	}
+ 
+ 	if (ctrl->panel_config.bare_board == true)
+ 		goto end;
+ 
+ 	if (ctrl->off_cmds.cmd_cnt)
+ 		mdss_dsi_panel_cmds_send(ctrl, &ctrl->off_cmds);
+ 
+ 	mdss_dsi_panel_off_in_prog_notify(pdata, pinfo);
+ 
+ end:
+ 	pinfo->blank_state = MDSS_PANEL_BLANK_BLANK;
+ 	pr_info("%s-:\n", __func__);
++
++#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
++	dt2w_scr_suspended = true;
++#endif
++
+ 	return 0;
+ }
 #if defined(CONFIG_FB_MSM_MDSS_SAMSUNG)
 	vdd = check_valid_ctrl(ctrl);
 	pinfo->blank_state = MDSS_PANEL_BLANK_READY_TO_UNBLANK;
