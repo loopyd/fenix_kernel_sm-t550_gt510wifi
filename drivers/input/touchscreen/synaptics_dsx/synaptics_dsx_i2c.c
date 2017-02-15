@@ -33,21 +33,6 @@
 #include "synaptics_dsx_core.h"
 #include <linux/of_gpio.h>
 #include <linux/of_irq.h>
-
-#include "synaptics_dsx_i2c.h"
-#ifdef CONFIG_TOUCHSCREEN_TOUCHX_BASE
-#include "touchx.h"
-#endif
-#include <linux/pinctrl/consumer.h>
-#include <linux/mmi_hall_notifier.h>
-#ifdef KERNEL_ABOVE_2_6_38
-#include <linux/input/mt.h>
-#endif
- 
-+#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-+#include <linux/input/doubletap2wake.h>
-+#endif
-+
 #if defined(CONFIG_SECURE_TOUCH)
 #include <linux/pm_runtime.h>
 #endif
@@ -320,11 +305,6 @@ int synaptics_dsx_get_dt_coords(struct device *dev, char *name,
 static int synaptics_dsx_parse_dt(struct device *dev,
 				struct synaptics_dsx_board_data *rmi4_pdata)
 {
-
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-		irq_set_irq_wake(rmi4_data->irq, 0);
-#endif
-
 	struct device_node *np = dev->of_node;
 	struct property *prop;
 	u32 temp_val, num_buttons;
@@ -487,25 +467,12 @@ static int synaptics_rmi4_i2c_probe(struct i2c_client *client,
 	return 0;
 }
 
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-	bool prevent_sleep = (dt2w_switch > 0);
-			if (prevent_sleep) {
-				pr_debug("suspend avoided!\n");
-				synaptics_dsx_enable_wakeup_source(rmi4_data, true);
-				return 0;
-			} else {
-#endif
-
 static int synaptics_rmi4_i2c_remove(struct i2c_client *client)
 {
 	platform_device_unregister(synaptics_dsx_i2c_device);
 
 	return 0;
 }
-
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-		irq_set_irq_wake(rmi4_data->irq, 1);
-#endif
 
 static const struct i2c_device_id synaptics_rmi4_id_table[] = {
 	{I2C_DRIVER_NAME, 0},
@@ -533,21 +500,11 @@ static struct i2c_driver synaptics_rmi4_i2c_driver = {
 	.id_table = synaptics_rmi4_id_table,
 };
 
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-	}
-#endif
 int synaptics_rmi4_bus_init(void)
 {
 	return i2c_add_driver(&synaptics_rmi4_i2c_driver);
 }
 EXPORT_SYMBOL(synaptics_rmi4_bus_init);
-
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-	if (dt2w_switch > 0) {
-		pr_info("suspend avoided!\n");
-		return 0;
-	} else {
-#endif
 
 void synaptics_rmi4_bus_exit(void)
 {
@@ -555,26 +512,6 @@ void synaptics_rmi4_bus_exit(void)
 
 	return;
 }
-
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-        }
-#endif
-
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-void touch_suspend(void)
-{
- 	synaptics_rmi4_suspend(&(exp_fn_ctrl.rmi4_data_ptr->input_dev->dev));
-}
-#endif
-
-#ifdef CONFIG_TOUCHSCREEN_DOUBLETAP2WAKE
-void touch_resume(void)
-{
-	synaptics_rmi4_resume(&(exp_fn_ctrl.rmi4_data_ptr->input_dev->dev));
-}
-#endif
-
-
 EXPORT_SYMBOL(synaptics_rmi4_bus_exit);
 
 MODULE_AUTHOR("Synaptics, Inc.");
