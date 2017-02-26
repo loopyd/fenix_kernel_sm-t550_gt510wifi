@@ -21,7 +21,7 @@
 #Ramdisk packing
 	echo "Building ramdisk structure..."
 	cp -r hK-tools/ramdisk/common/* hK-out/pack/rd
-	cp -r hK-tools/ramdisk/T550/* hK-out/pack/rd
+	cp -r hK-tools/ramdisk/P550/* hK-out/pack/rd
 	cd $(pwd)/hK-out/pack/rd
 	mkdir -p data dev oem proc sys system
 	echo "Setting ramdisk file permissions..."
